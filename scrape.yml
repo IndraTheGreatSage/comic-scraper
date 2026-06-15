@@ -1,0 +1,66 @@
+name: Comic Scraper
+
+on:
+  schedule:
+    # Run every day at 2 AM UTC (9 AM WIB)
+    - cron: '0 2 * * *'
+  workflow_dispatch: # Allow manual trigger from GitHub UI
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+      
+      - name: Setup Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: '1.21'
+      
+      - name: Cache Go modules
+        uses: actions/cache@v3
+        with:
+          path: ~/go/pkg/mod
+          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-
+      
+      - name: Install dependencies
+        run: |
+          go mod tidy
+          go mod download
+      
+      - name: Run scraper
+        env:
+          MONGODB_URI: ${{ secrets.MONGODB_URI }}
+          BASE_URL: ${{ secrets.BASE_URL }}
+          DB_NAME: comic_db
+        run: |
+          echo "Starting comic scraper..."
+          go run main.go scraper.go database.go models.go
+          echo "Scraping completed!"
+      
+      - name: Check MongoDB connection
+        env:
+          MONGODB_URI: ${{ secrets.MONGODB_URI }}
+        run: |
+          # Install MongoDB tools
+          wget -qO - https://www.mongodb.org/static/pgp/server-6.0.asc | sudo apt-key add -
+          echo "deb [ arch=amd64,arm64 ] https://repo.mongodb.org/apt/ubuntu focal/mongodb-org/6.0 multiverse" | sudo tee /etc/apt/sources.list.d/mongodb-org-6.0.list
+          sudo apt-get update
+          sudo apt-get install -y mongodb-database-tools
+          
+          # Count documents
+          echo "Checking database..."
+          mongosh "$MONGODB_URI" --eval "db.getSiblingDB('comic_db').comics.countDocuments()"
+      
+      - name: Upload logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: scraper-logs-${{ github.run_number }}
+          path: |
+            *.log
+          retention-days: 7
