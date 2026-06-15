@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: comic-api
+    env: go
+    buildCommand: go build -o api server.go api.go database.go models.go
+    startCommand: ./api
+    envVars:
+      - key: MONGODB_URI
+        sync: false
+      - key: BASE_URL
+        value: https://komiku.id/
+      - key: PORT
+        value: 8080
